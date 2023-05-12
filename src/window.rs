@@ -31,6 +31,7 @@ pub struct Window {
     pub wl_frame_cb: Option<WlCallback>,
     pub width: u32,
     pub height: u32,
+    pub fullscreen: bool,
     pub closed: bool,
 }
 
@@ -79,6 +80,7 @@ impl Window {
             wl_frame_cb: None,
             width: 400,
             height: 300,
+            fullscreen: false,
             closed: false,
         }
     }
@@ -158,6 +160,14 @@ impl Window {
                 .unwrap_or(1),
         }
     }
+
+    pub fn toggle_fullscreen(&self, conn: &mut Connection<State>) {
+        if self.fullscreen {
+            self.xdg_toplevel.unset_fullscreen(conn);
+        } else {
+            self.xdg_toplevel.set_fullscreen(conn, None);
+        }
+    }
 }
 
 fn wl_surface_cb(
@@ -230,6 +240,13 @@ fn xdg_toplevel_cb(
             if args.height > 0 {
                 state.window.height = args.height as u32;
             }
+            state.window.fullscreen = args
+                .states
+                .chunks_exact(4)
+                .map(|x| u32::from_ne_bytes(x.try_into().unwrap()))
+                .filter_map(|x| xdg_toplevel::State::try_from(x).ok())
+                .find(|x| *x == xdg_toplevel::State::Fullscreen)
+                .is_some();
         }
         xdg_toplevel::Event::Close => {
             state.window.closed = true;

@@ -147,6 +147,7 @@ impl State {
                 self.img_transform.y += (self.img_transform.y - y) * delta_scale / prev_scale;
                 self.img_transform.scale += delta_scale;
             }
+            Action::ToggleFullscreen => self.window.toggle_fullscreen(conn),
         }
         self.window.request_frame(conn);
     }
@@ -184,6 +185,7 @@ impl KeyboardHandler for State {
                 y: self.window.height as f64 / 2.0,
                 val: -10.0,
             },
+            "f" => Action::ToggleFullscreen,
             _ => return,
         };
 
@@ -224,6 +226,7 @@ pub enum Action {
     MoveUp,
     MoveDown,
     Zoom { x: f64, y: f64, val: f64 },
+    ToggleFullscreen,
 }
 
 #[derive(Clone, Copy)]
