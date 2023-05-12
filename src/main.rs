@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     conn.add_registry_cb(wl_registry_cb);
 
     let globals = Globals::bind(&mut conn, &wl_globals)?;
-    let shm_alloc = ShmAlloc::new(globals.wl_shm);
+    let shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
     let window = Window::new(&mut conn, &globals);
 
     let cursor_theme = CursorTheme::new(None, None);

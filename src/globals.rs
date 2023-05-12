@@ -8,7 +8,6 @@ use wayrs_protocols::xdg_decoration_unstable_v1::*;
 use wayrs_protocols::xdg_shell::*;
 
 pub struct Globals {
-    pub wl_shm: WlShm,
     pub wl_compositor: WlCompositor,
     pub wl_subcompositor: WlSubcompositor,
     pub xdg_wm_base: XdgWmBase,
@@ -23,7 +22,6 @@ impl Globals {
         globals: &[Global],
     ) -> Result<Self, BindError> {
         Ok(Self {
-            wl_shm: globals.bind(conn, 1..=1)?,
             wl_compositor: globals.bind(conn, 1..=5)?,
             wl_subcompositor: globals.bind(conn, 1..=1)?,
             xdg_wm_base: globals.bind_with_cb(conn, 1..=5, xdg_wm_base_cb)?,
