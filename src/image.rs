@@ -6,7 +6,7 @@ use tiny_skia::{Pixmap, PixmapMut};
 use usvg::{fontdb, TreeParsing, TreeTextToPath};
 
 pub enum Image {
-    Svg { tree: usvg::Tree },
+    Svg { tree: resvg::Tree },
     Image { pixmap: Pixmap },
 }
 
@@ -14,6 +14,11 @@ impl Image {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         match path.as_ref().extension().and_then(|ext| ext.to_str()) {
             Some("svg") => {
+                let mut opt = usvg::Options::default();
+                opt.resources_dir = std::fs::canonicalize(path.as_ref())
+                    .ok()
+                    .and_then(|p| p.parent().map(Into::into));
+
                 let buf = std::fs::read(path).context("could not read file")?;
                 let mut tree = usvg::Tree::from_data(&buf, &usvg::Options::default())?;
 
@@ -21,7 +26,9 @@ impl Image {
                 fontdb.load_system_fonts();
                 tree.convert_text(&fontdb);
 
-                Ok(Self::Svg { tree })
+                Ok(Self::Svg {
+                    tree: resvg::Tree::from_usvg(&tree),
+                })
             }
             _ => {
                 let image = image::io::Reader::open(path)
@@ -48,7 +55,7 @@ impl Image {
             .post_scale(gui_scale as f32, gui_scale as f32);
         match self {
             Self::Svg { tree } => {
-                resvg::render(tree, resvg::FitTo::Original, transform, canvas).unwrap();
+                tree.render(transform, &mut canvas);
             }
             Self::Image { pixmap } => {
                 canvas.draw_pixmap(
