@@ -13,7 +13,7 @@ nix = { version = "0.26.2", default-features = false, features = ["poll"] }
 
 wayrs-client = "0.10"
 wayrs-protocols = { version = "0.10", features = ["xdg-shell", "viewporter", "fractional-scale-v1", "xdg-decoration-unstable-v1"] }
-wayrs-utils = { version = "0.5.0", features = ["seats", "shm_alloc", "cursor", "keyboard"] }
+wayrs-utils = { version = "0.6.0", features = ["seats", "shm_alloc", "cursor", "keyboard"] }
 
 [profile.release]
 lto = "thin"

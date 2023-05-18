@@ -18,7 +18,7 @@ use wayrs_client::protocol::*;
 use wayrs_client::proxy::Proxy;
 use wayrs_client::IoMode;
 
-use wayrs_utils::cursor::{CursorImage, CursorTheme, ThemedPointer};
+use wayrs_utils::cursor::{CursorImage, CursorShape, CursorTheme, ThemedPointer};
 use wayrs_utils::keyboard::{Keyboard, KeyboardEvent, KeyboardHandler};
 use wayrs_utils::seats::{SeatHandler, Seats};
 use wayrs_utils::shm_alloc::ShmAlloc;
@@ -48,15 +48,16 @@ fn main() -> Result<()> {
     let shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
     let window = Window::new(&mut conn, &globals);
 
-    let cursor_theme = CursorTheme::new(None, None);
+    let cursor_theme = CursorTheme::new(&mut conn, &wl_globals);
 
     let mut state = State {
         globals,
         shm_alloc,
         backend,
 
-        default_cursor: cursor_theme.get_image("default")?,
-        move_cursor: cursor_theme.get_image("move")?,
+        default_cursor: cursor_theme.get_image(CursorShape::Default)?,
+        move_cursor: cursor_theme.get_image(CursorShape::Move)?,
+        cursor_theme,
 
         seats: Seats::bind(&mut conn, &wl_globals),
         outputs: Vec::new(),
@@ -112,6 +113,7 @@ pub struct State {
     pub shm_alloc: ShmAlloc,
     pub backend: Image,
 
+    pub cursor_theme: CursorTheme,
     pub default_cursor: CursorImage,
     pub move_cursor: CursorImage,
 
@@ -273,7 +275,7 @@ impl SeatHandler for State {
         self.pointers.push(Pointer {
             seat,
             wl: wl_pointer,
-            themed: ThemedPointer::new(conn, wl_pointer, self.globals.wl_compositor),
+            themed: self.cursor_theme.get_themed_pointer(conn, wl_pointer),
             enter_serial: 0,
             x: 0.0,
             y: 0.0,
