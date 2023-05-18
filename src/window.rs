@@ -245,8 +245,7 @@ fn xdg_toplevel_cb(
                 .chunks_exact(4)
                 .map(|x| u32::from_ne_bytes(x.try_into().unwrap()))
                 .filter_map(|x| xdg_toplevel::State::try_from(x).ok())
-                .find(|x| *x == xdg_toplevel::State::Fullscreen)
-                .is_some();
+                .any(|x| x == xdg_toplevel::State::Fullscreen);
         }
         xdg_toplevel::Event::Close => {
             state.window.closed = true;
