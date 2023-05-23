@@ -48,7 +48,7 @@ fn main() -> Result<()> {
 
     let globals = Globals::bind(&mut conn, &wl_globals)?;
     let shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
-    let window = Window::new(&mut conn, &globals);
+    let window = Window::new(&mut conn, &globals, format!("{} - reimv", cli_args.file));
 
     let cursor_theme = CursorTheme::new(&mut conn, &wl_globals);
 

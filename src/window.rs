@@ -1,8 +1,10 @@
 use std::collections::HashSet;
+use std::ffi::CString;
 
 use resvg::tiny_skia;
 
 use wayrs_client::connection::Connection;
+use wayrs_client::cstr;
 use wayrs_client::object::ObjectId;
 use wayrs_client::proxy::Proxy;
 use wayrs_protocols::viewporter::*;
@@ -36,7 +38,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(conn: &mut Connection<State>, globals: &Globals) -> Self {
+    pub fn new(conn: &mut Connection<State>, globals: &Globals, title: String) -> Self {
         let surface = globals
             .wl_compositor
             .create_surface_with_cb(conn, wl_surface_cb);
@@ -53,6 +55,8 @@ impl Window {
                 .get_xdg_surface_with_cb(conn, surface, xdg_surface_cb);
 
         let xdg_toplevel = xdg_surface.get_toplevel_with_cb(conn, xdg_toplevel_cb);
+        xdg_toplevel.set_app_id(conn, cstr!("reimv").into());
+        xdg_toplevel.set_title(conn, CString::new(title).expect("title has nul bytes"));
 
         // We don't care what the compositor prefers, thus no callback. There are no plans to
         // implement CSD.
