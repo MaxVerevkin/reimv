@@ -38,11 +38,9 @@ impl Image {
                     .into_rgba8();
                 let w = image.width();
                 let h = image.height();
-                let pixmap = Pixmap::from_vec(
-                    image.into_vec(),
-                    tiny_skia_path::IntSize::from_wh(w, h).unwrap(),
-                )
-                .unwrap();
+                let pixmap =
+                    Pixmap::from_vec(image.into_vec(), tiny_skia::IntSize::from_wh(w, h).unwrap())
+                        .unwrap();
                 Ok(Self::Image { pixmap })
             }
         }
