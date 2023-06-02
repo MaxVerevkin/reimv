@@ -3,6 +3,7 @@ use wayrs_client::global::{BindError, Global, GlobalsExt};
 
 use wayrs_client::protocol::*;
 use wayrs_protocols::fractional_scale_v1::*;
+use wayrs_protocols::pointer_gestures_unstable_v1::*;
 use wayrs_protocols::viewporter::*;
 use wayrs_protocols::xdg_decoration_unstable_v1::*;
 use wayrs_protocols::xdg_shell::*;
@@ -14,6 +15,7 @@ pub struct Globals {
     pub wp_viewporter: WpViewporter,
     pub wp_fractional_scale_manager: Option<WpFractionalScaleManagerV1>,
     pub xdg_decoration_manager: Option<ZxdgDecorationManagerV1>,
+    pub pointer_gestures: Option<ZwpPointerGesturesV1>,
 }
 
 impl Globals {
@@ -28,6 +30,7 @@ impl Globals {
             wp_viewporter: globals.bind(conn, 1..=1)?,
             wp_fractional_scale_manager: globals.bind(conn, 1..=1).ok(),
             xdg_decoration_manager: globals.bind(conn, 1..=1).ok(),
+            pointer_gestures: globals.bind(conn, 1..=3).ok(),
         })
     }
 }

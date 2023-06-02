@@ -19,6 +19,7 @@ use wayrs_client::connection::Connection;
 use wayrs_client::protocol::*;
 use wayrs_client::proxy::Proxy;
 use wayrs_client::IoMode;
+use wayrs_protocols::pointer_gestures_unstable_v1::*;
 
 use wayrs_utils::cursor::{CursorImage, CursorShape, CursorTheme, ThemedPointer};
 use wayrs_utils::keyboard::{Keyboard, KeyboardEvent, KeyboardHandler};
@@ -214,6 +215,7 @@ impl KeyboardHandler for State {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ImageTransform {
     /// Y-offset in surface local coordinates
     x: f64,
@@ -248,9 +250,33 @@ pub struct Pointer {
     seat: WlSeat,
     wl: WlPointer,
     themed: ThemedPointer,
+    pinch_gesture: Option<PinchGesture>,
     enter_serial: u32,
     x: f64,
     y: f64,
+}
+
+struct PinchGesture {
+    wl: ZwpPointerGesturePinchV1,
+    state: Option<PinchGestureState>,
+}
+
+struct PinchGestureState {
+    prev_scale: f64,
+    fallback_transform: ImageTransform,
+}
+
+impl PinchGesture {
+    fn new(
+        conn: &mut Connection<State>,
+        gesures: ZwpPointerGesturesV1,
+        pointer: WlPointer,
+    ) -> Self {
+        Self {
+            wl: gesures.get_pinch_gesture_with_cb(conn, pointer, pointer_pinch_cb),
+            state: None,
+        }
+    }
 }
 
 impl SeatHandler for State {
@@ -278,6 +304,10 @@ impl SeatHandler for State {
             seat,
             wl: wl_pointer,
             themed: self.cursor_theme.get_themed_pointer(conn, wl_pointer),
+            pinch_gesture: self
+                .globals
+                .pointer_gestures
+                .map(|pg| PinchGesture::new(conn, pg, wl_pointer)),
             enter_serial: 0,
             x: 0.0,
             y: 0.0,
@@ -287,10 +317,13 @@ impl SeatHandler for State {
     fn pointer_removed(&mut self, conn: &mut Connection<Self>, seat: WlSeat) {
         let i = self.pointers.iter().position(|p| p.seat == seat).unwrap();
         let ptr = self.pointers.swap_remove(i);
+        ptr.themed.destroy(conn);
+        if let Some(pinch) = ptr.pinch_gesture {
+            pinch.wl.destroy(conn);
+        }
         if ptr.wl.version() >= 3 {
             ptr.wl.release(conn);
         }
-        ptr.themed.destroy(conn);
     }
 }
 
@@ -427,6 +460,51 @@ fn wl_pointer_cb(
                     },
                 );
             }
+        }
+        _ => (),
+    }
+}
+
+fn pointer_pinch_cb(
+    conn: &mut Connection<State>,
+    state: &mut State,
+    pointer_pinch: ZwpPointerGesturePinchV1,
+    event: zwp_pointer_gesture_pinch_v1::Event,
+) {
+    let ptr = state
+        .pointers
+        .iter_mut()
+        .find(|s| {
+            s.pinch_gesture
+                .as_ref()
+                .is_some_and(|pg| pg.wl == pointer_pinch)
+        })
+        .unwrap();
+
+    let pg = ptr.pinch_gesture.as_mut().unwrap();
+
+    use zwp_pointer_gesture_pinch_v1::Event;
+    match (event, &mut pg.state) {
+        (Event::Begin(args), _) if args.fingers == 2 => {
+            pg.state = Some(PinchGestureState {
+                prev_scale: 1.0,
+                fallback_transform: state.img_transform,
+            });
+        }
+        (Event::Update(args), Some(s)) => {
+            let val = (args.scale.as_f64() - s.prev_scale) * -100.0;
+            let (x, y) = (ptr.x, ptr.y);
+            s.prev_scale = args.scale.as_f64();
+            state.img_transform.x += args.dx.as_f64();
+            state.img_transform.y += args.dy.as_f64();
+            state.handle_action(conn, Action::Zoom { x, y, val });
+        }
+        (Event::End(args), Some(s)) => {
+            if args.cancelled == 1 {
+                state.img_transform = s.fallback_transform;
+                state.window.request_frame(conn);
+            }
+            pg.state = None;
         }
         _ => (),
     }
