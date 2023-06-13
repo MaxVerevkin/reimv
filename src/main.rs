@@ -372,7 +372,7 @@ fn wl_pointer_cb(
 ) {
     const LEFT_PTR_BUTTON: u32 = 272;
 
-    let cursor_scale = state.window.get_int_scale(state);
+    let gui_scale = state.window.get_int_scale(state);
 
     let ptr = state
         .pointers
@@ -390,7 +390,7 @@ fn wl_pointer_cb(
                 conn,
                 &mut state.shm_alloc,
                 &state.default_cursor,
-                cursor_scale,
+                gui_scale,
                 ptr.enter_serial,
             );
         }
@@ -425,7 +425,7 @@ fn wl_pointer_cb(
                         conn,
                         &mut state.shm_alloc,
                         &state.move_cursor,
-                        cursor_scale,
+                        gui_scale,
                         ptr.enter_serial,
                     );
                 }
@@ -436,7 +436,7 @@ fn wl_pointer_cb(
                         conn,
                         &mut state.shm_alloc,
                         &state.default_cursor,
-                        cursor_scale,
+                        gui_scale,
                         ptr.enter_serial,
                     );
                     state.move_transaction = None;
@@ -471,6 +471,8 @@ fn pointer_pinch_cb(
     pointer_pinch: ZwpPointerGesturePinchV1,
     event: zwp_pointer_gesture_pinch_v1::Event,
 ) {
+    let gui_scale = state.window.get_int_scale(state);
+
     let ptr = state
         .pointers
         .iter_mut()
@@ -490,6 +492,13 @@ fn pointer_pinch_cb(
                 prev_scale: 1.0,
                 fallback_transform: state.img_transform,
             });
+            ptr.themed.set_cursor(
+                conn,
+                &mut state.shm_alloc,
+                &state.move_cursor,
+                gui_scale,
+                ptr.enter_serial,
+            );
         }
         (Event::Update(args), Some(s)) => {
             let val = (args.scale.as_f64() - s.prev_scale) * -100.0;
@@ -504,6 +513,13 @@ fn pointer_pinch_cb(
                 state.img_transform = s.fallback_transform;
                 state.window.request_frame(conn);
             }
+            ptr.themed.set_cursor(
+                conn,
+                &mut state.shm_alloc,
+                &state.default_cursor,
+                gui_scale,
+                ptr.enter_serial,
+            );
             pg.state = None;
         }
         _ => (),
