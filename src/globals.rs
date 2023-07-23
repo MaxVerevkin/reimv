@@ -1,5 +1,5 @@
-use wayrs_client::connection::Connection;
 use wayrs_client::global::{BindError, Global, GlobalsExt};
+use wayrs_client::Connection;
 
 use wayrs_client::protocol::*;
 use wayrs_protocols::fractional_scale_v1::*;

@@ -3,10 +3,10 @@ use std::ffi::CString;
 
 use resvg::tiny_skia;
 
-use wayrs_client::connection::Connection;
 use wayrs_client::cstr;
 use wayrs_client::object::ObjectId;
 use wayrs_client::proxy::Proxy;
+use wayrs_client::Connection;
 use wayrs_protocols::viewporter::*;
 use wayrs_protocols::xdg_shell::*;
 
@@ -203,7 +203,9 @@ fn xdg_surface_cb(
     event: xdg_surface::Event,
 ) {
     assert_eq!(state.window.xdg_surface, xdg_surface);
-    let xdg_surface::Event::Configure(serial) = event else { return };
+    let xdg_surface::Event::Configure(serial) = event else {
+        return;
+    };
     xdg_surface.ack_configure(conn, serial);
     if state.window.mapped {
         // NOTE: this is because of a river bug: https://github.com/riverwm/river/issues/807
@@ -222,7 +224,9 @@ fn fractional_scale_cb(
     event: wp_fractional_scale_v1::Event,
 ) {
     assert_eq!(state.window.fractional_scale, Some(fractional_scale));
-    let wp_fractional_scale_v1::Event::PreferredScale(scale120) = event else { return };
+    let wp_fractional_scale_v1::Event::PreferredScale(scale120) = event else {
+        return;
+    };
     if state.window.scale120 != Some(scale120) {
         state.window.scale120 = Some(scale120);
         state.window.request_frame(conn);

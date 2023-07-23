@@ -15,10 +15,9 @@ use repeat::RepeatState;
 use wayrs_client::global::{Global, GlobalExt};
 use window::Window;
 
-use wayrs_client::connection::Connection;
 use wayrs_client::protocol::*;
 use wayrs_client::proxy::Proxy;
-use wayrs_client::IoMode;
+use wayrs_client::{Connection, IoMode};
 use wayrs_protocols::pointer_gestures_unstable_v1::*;
 
 use wayrs_utils::cursor::{CursorImage, CursorShape, CursorTheme, ThemedPointer};
@@ -43,8 +42,7 @@ fn main() -> Result<()> {
     let cli_args = CliArgs::parse();
     let backend = Image::from_file(&cli_args.file)?;
 
-    let mut conn = Connection::connect()?;
-    let wl_globals = conn.blocking_collect_initial_globals()?;
+    let (mut conn, wl_globals) = Connection::connect_and_collect_globals()?;
     conn.add_registry_cb(wl_registry_cb);
 
     let globals = Globals::bind(&mut conn, &wl_globals)?;

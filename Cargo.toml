@@ -8,10 +8,10 @@ anyhow = "1.0.69"
 clap = { version = "4.1.4", features = ["derive"] }
 image = "0.24.5"
 nix = { version = "0.26.2", default-features = false, features = ["poll"] }
-resvg = "0.34.0"
-wayrs-client = "0.10"
-wayrs-protocols = { version = "0.10", features = ["xdg-shell", "viewporter", "fractional-scale-v1", "xdg-decoration-unstable-v1", "pointer-gestures-unstable-v1"] }
-wayrs-utils = { version = "0.6.0", features = ["seats", "shm_alloc", "cursor", "keyboard"] }
+resvg = "0.35.0"
+wayrs-client = "0.11"
+wayrs-protocols = { version = "0.11", features = ["xdg-shell", "viewporter", "fractional-scale-v1", "xdg-decoration-unstable-v1", "pointer-gestures-unstable-v1"] }
+wayrs-utils = { version = "0.7", features = ["seats", "shm_alloc", "cursor", "keyboard"] }
 
 [profile.release]
 lto = "thin"
