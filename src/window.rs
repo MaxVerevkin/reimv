@@ -16,6 +16,7 @@ use wayrs_protocols::xdg_decoration_unstable_v1::*;
 use wayrs_utils::shm_alloc::BufferSpec;
 
 use crate::globals::Globals;
+use crate::EventCtx;
 use crate::State;
 
 pub struct Window {
@@ -91,14 +92,11 @@ impl Window {
 
     pub fn request_frame(&mut self, conn: &mut Connection<State>) {
         if self.mapped && self.wl_frame_cb.is_none() {
-            self.wl_frame_cb = Some(self.surface.frame_with_cb(
-                conn,
-                |conn, state, cb, _done_event| {
-                    assert_eq!(state.window.wl_frame_cb, Some(cb));
-                    state.window.wl_frame_cb = None;
-                    Self::frame(state, conn);
-                },
-            ));
+            self.wl_frame_cb = Some(self.surface.frame_with_cb(conn, |ctx| {
+                assert_eq!(ctx.state.window.wl_frame_cb, Some(ctx.proxy));
+                ctx.state.window.wl_frame_cb = None;
+                Self::frame(ctx.state, ctx.conn);
+            }));
             self.surface.commit(conn);
         }
     }
@@ -174,81 +172,61 @@ impl Window {
     }
 }
 
-fn wl_surface_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    wl_surface: WlSurface,
-    event: wl_surface::Event,
-) {
-    assert_eq!(state.window.surface, wl_surface);
-    match event {
+fn wl_surface_cb(ctx: EventCtx<WlSurface>) {
+    assert_eq!(ctx.state.window.surface, ctx.proxy);
+    match ctx.event {
         wl_surface::Event::Enter(output) => {
-            state.window.outputs.insert(output);
+            ctx.state.window.outputs.insert(output);
         }
         wl_surface::Event::Leave(output) => {
-            state.window.outputs.remove(&output);
+            ctx.state.window.outputs.remove(&output);
         }
         wl_surface::Event::PreferredBufferScale(_scale) => {
             // TODO
         }
         _ => (),
     }
-    state.window.request_frame(conn);
+    ctx.state.window.request_frame(ctx.conn);
 }
 
-fn xdg_surface_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    xdg_surface: XdgSurface,
-    event: xdg_surface::Event,
-) {
-    assert_eq!(state.window.xdg_surface, xdg_surface);
-    let xdg_surface::Event::Configure(serial) = event else {
+fn xdg_surface_cb(ctx: EventCtx<XdgSurface>) {
+    assert_eq!(ctx.state.window.xdg_surface, ctx.proxy);
+    let xdg_surface::Event::Configure(serial) = ctx.event else {
         return;
     };
-    xdg_surface.ack_configure(conn, serial);
-    if state.window.mapped {
+    ctx.proxy.ack_configure(ctx.conn, serial);
+    if ctx.state.window.mapped {
         // NOTE: this is because of a river bug: https://github.com/riverwm/river/issues/807
-        // state.window.request_frame(conn);
-        Window::frame(state, conn);
+        // ctx.state.window.request_frame(conn);
+        Window::frame(ctx.state, ctx.conn);
     } else {
-        state.window.mapped = true;
-        Window::frame(state, conn);
+        ctx.state.window.mapped = true;
+        Window::frame(ctx.state, ctx.conn);
     }
 }
 
-fn fractional_scale_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    fractional_scale: WpFractionalScaleV1,
-    event: wp_fractional_scale_v1::Event,
-) {
-    assert_eq!(state.window.fractional_scale, Some(fractional_scale));
-    let wp_fractional_scale_v1::Event::PreferredScale(scale120) = event else {
+fn fractional_scale_cb(ctx: EventCtx<WpFractionalScaleV1>) {
+    assert_eq!(ctx.state.window.fractional_scale, Some(ctx.proxy));
+    let wp_fractional_scale_v1::Event::PreferredScale(scale120) = ctx.event else {
         return;
     };
-    if state.window.scale120 != Some(scale120) {
-        state.window.scale120 = Some(scale120);
-        state.window.request_frame(conn);
+    if ctx.state.window.scale120 != Some(scale120) {
+        ctx.state.window.scale120 = Some(scale120);
+        ctx.state.window.request_frame(ctx.conn);
     }
 }
 
-fn xdg_toplevel_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    xdg_toplevel: XdgToplevel,
-    event: xdg_toplevel::Event,
-) {
-    assert_eq!(state.window.xdg_toplevel, xdg_toplevel);
-    match event {
+fn xdg_toplevel_cb(ctx: EventCtx<XdgToplevel>) {
+    assert_eq!(ctx.state.window.xdg_toplevel, ctx.proxy);
+    match ctx.event {
         xdg_toplevel::Event::Configure(args) => {
             if args.width > 0 {
-                state.window.width = args.width as u32;
+                ctx.state.window.width = args.width as u32;
             }
             if args.height > 0 {
-                state.window.height = args.height as u32;
+                ctx.state.window.height = args.height as u32;
             }
-            state.window.fullscreen = args
+            ctx.state.window.fullscreen = args
                 .states
                 .chunks_exact(4)
                 .map(|x| u32::from_ne_bytes(x.try_into().unwrap()))
@@ -256,8 +234,8 @@ fn xdg_toplevel_cb(
                 .any(|x| x == xdg_toplevel::State::Fullscreen);
         }
         xdg_toplevel::Event::Close => {
-            state.window.closed = true;
-            conn.break_dispatch_loop();
+            ctx.state.window.closed = true;
+            ctx.conn.break_dispatch_loop();
         }
         xdg_toplevel::Event::ConfigureBounds(_) => (),
         xdg_toplevel::Event::WmCapabilities(_) => (),

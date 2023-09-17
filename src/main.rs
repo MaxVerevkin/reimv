@@ -5,21 +5,20 @@ mod image;
 mod repeat;
 mod window;
 
-use std::io::ErrorKind;
-use std::os::fd::AsRawFd;
-use std::time::Instant;
+use std::io::{self, ErrorKind};
+use std::os::fd::{AsRawFd, RawFd};
+use std::time::{Duration, Instant};
 
 use crate::image::Image;
 use globals::Globals;
 use repeat::RepeatState;
-use wayrs_client::global::{Global, GlobalExt};
 use window::Window;
 
+use wayrs_client::global::{Global, GlobalExt};
 use wayrs_client::protocol::*;
 use wayrs_client::proxy::Proxy;
 use wayrs_client::{Connection, IoMode};
 use wayrs_protocols::pointer_gestures_unstable_v1::*;
-
 use wayrs_utils::cursor::{CursorImage, CursorShape, CursorTheme, ThemedPointer};
 use wayrs_utils::keyboard::{Keyboard, KeyboardEvent, KeyboardHandler};
 use wayrs_utils::seats::{SeatHandler, Seats};
@@ -28,7 +27,7 @@ use wayrs_utils::shm_alloc::ShmAlloc;
 use anyhow::{bail, Result};
 use clap::Parser;
 
-use nix::poll::{poll, PollFd, PollFlags};
+type EventCtx<'a, P> = wayrs_client::EventCtx<'a, State, P>;
 
 /// Simple native Wayland image viewer that works
 #[derive(Parser, Debug)]
@@ -49,7 +48,7 @@ fn main() -> Result<()> {
     let shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
     let window = Window::new(&mut conn, &globals, format!("{} - reimv", cli_args.file));
 
-    let cursor_theme = CursorTheme::new(&mut conn, &wl_globals);
+    let cursor_theme = CursorTheme::new(&mut conn, &wl_globals, globals.wl_compositor);
 
     let mut state = State {
         globals,
@@ -85,21 +84,17 @@ fn main() -> Result<()> {
 
     conn.flush(IoMode::Blocking)?;
 
-    let mut poll_fds = [PollFd::new(conn.as_raw_fd(), PollFlags::POLLIN)];
-
     while !state.window.closed {
-        poll(&mut poll_fds, state.kbd_repeat.timeout() as i32)?;
+        poll(conn.as_raw_fd(), state.kbd_repeat.timeout())?;
 
         if let Some(action) = state.kbd_repeat.tick() {
             state.handle_action(&mut conn, action);
         }
 
-        if poll_fds[0].any().unwrap_or(true) {
-            match conn.recv_events(IoMode::NonBlocking) {
-                Ok(()) => (),
-                Err(e) if e.kind() == ErrorKind::WouldBlock => (),
-                Err(e) => bail!(e),
-            }
+        match conn.recv_events(IoMode::NonBlocking) {
+            Ok(()) => (),
+            Err(e) if e.kind() == ErrorKind::WouldBlock => (),
+            Err(e) => bail!(e),
         }
 
         conn.dispatch_events(&mut state);
@@ -107,6 +102,28 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn poll(fd: RawFd, timeout: Option<Duration>) -> io::Result<()> {
+    let mut fds = [libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    }];
+
+    let result = unsafe {
+        libc::poll(
+            fds.as_mut_ptr(),
+            1,
+            timeout.map_or(-1, |t| t.as_secs() as _),
+        )
+    };
+
+    if result == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 pub struct State {
@@ -343,60 +360,52 @@ fn wl_registry_cb(conn: &mut Connection<State>, state: &mut State, event: &wl_re
     }
 }
 
-fn wl_output_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    wl_output: WlOutput,
-    event: wl_output::Event,
-) {
-    if let wl_output::Event::Scale(scale) = event {
-        let output = state
+fn wl_output_cb(ctx: EventCtx<WlOutput>) {
+    if let wl_output::Event::Scale(scale) = ctx.event {
+        let output = ctx
+            .state
             .outputs
             .iter_mut()
-            .find(|o| o.wl == wl_output)
+            .find(|o| o.wl == ctx.proxy)
             .unwrap();
         output.scale = scale.try_into().unwrap();
-        if state.window.outputs.contains(&wl_output.id()) {
-            state.window.request_frame(conn);
+        if ctx.state.window.outputs.contains(&ctx.proxy.id()) {
+            ctx.state.window.request_frame(ctx.conn);
         }
     }
 }
 
-fn wl_pointer_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    wl_pointer: WlPointer,
-    event: wl_pointer::Event,
-) {
+fn wl_pointer_cb(ctx: EventCtx<WlPointer>) {
     const LEFT_PTR_BUTTON: u32 = 272;
 
-    let gui_scale = state.window.get_int_scale(state);
+    let gui_scale = ctx.state.window.get_int_scale(ctx.state);
 
-    let ptr = state
+    let ptr = ctx
+        .state
         .pointers
         .iter_mut()
-        .find(|s| s.wl == wl_pointer)
+        .find(|s| s.wl == ctx.proxy)
         .unwrap();
 
-    match event {
+    match ctx.event {
         wl_pointer::Event::Enter(args) => {
-            assert_eq!(args.surface, state.window.surface.id());
+            assert_eq!(args.surface, ctx.state.window.surface.id());
             ptr.enter_serial = args.serial;
             ptr.x = args.surface_x.as_f64();
             ptr.y = args.surface_y.as_f64();
             ptr.themed.set_cursor(
-                conn,
-                &mut state.shm_alloc,
-                &state.default_cursor,
+                ctx.conn,
+                &mut ctx.state.shm_alloc,
+                &ctx.state.default_cursor,
                 gui_scale,
                 ptr.enter_serial,
             );
         }
         wl_pointer::Event::Leave(args) => {
-            assert_eq!(args.surface, state.window.surface.id());
-            if let Some(mt) = &mut state.move_transaction {
+            assert_eq!(args.surface, ctx.state.window.surface.id());
+            if let Some(mt) = &mut ctx.state.move_transaction {
                 if mt.wl_seat == ptr.seat {
-                    state.move_transaction = None;
+                    ctx.state.move_transaction = None;
                 }
             }
         }
@@ -407,22 +416,22 @@ fn wl_pointer_cb(
             let dy = y - ptr.y;
             ptr.x = x;
             ptr.y = y;
-            if let Some(mt) = &mut state.move_transaction {
+            if let Some(mt) = &mut ctx.state.move_transaction {
                 if mt.wl_seat == ptr.seat {
-                    state.img_transform.x += dx;
-                    state.img_transform.y += dy;
-                    state.window.request_frame(conn);
+                    ctx.state.img_transform.x += dx;
+                    ctx.state.img_transform.y += dy;
+                    ctx.state.window.request_frame(ctx.conn);
                 }
             }
         }
         wl_pointer::Event::Button(args) => {
-            match (args.button, args.state, &mut state.move_transaction) {
+            match (args.button, args.state, &mut ctx.state.move_transaction) {
                 (LEFT_PTR_BUTTON, wl_pointer::ButtonState::Pressed, None) => {
-                    state.move_transaction = Some(MoveTransaction { wl_seat: ptr.seat });
+                    ctx.state.move_transaction = Some(MoveTransaction { wl_seat: ptr.seat });
                     ptr.themed.set_cursor(
-                        conn,
-                        &mut state.shm_alloc,
-                        &state.move_cursor,
+                        ctx.conn,
+                        &mut ctx.state.shm_alloc,
+                        &ctx.state.move_cursor,
                         gui_scale,
                         ptr.enter_serial,
                     );
@@ -431,26 +440,27 @@ fn wl_pointer_cb(
                     if mt.wl_seat == ptr.seat =>
                 {
                     ptr.themed.set_cursor(
-                        conn,
-                        &mut state.shm_alloc,
-                        &state.default_cursor,
+                        ctx.conn,
+                        &mut ctx.state.shm_alloc,
+                        &ctx.state.default_cursor,
                         gui_scale,
                         ptr.enter_serial,
                     );
-                    state.move_transaction = None;
+                    ctx.state.move_transaction = None;
                 }
                 _ => (),
             }
         }
         wl_pointer::Event::Axis(args) => {
             if args.axis == wl_pointer::Axis::VerticalScroll
-                && state
+                && ctx
+                    .state
                     .move_transaction
                     .map_or(true, |mt| mt.wl_seat == ptr.seat)
             {
                 let (x, y) = (ptr.x, ptr.y);
-                state.handle_action(
-                    conn,
+                ctx.state.handle_action(
+                    ctx.conn,
                     Action::Zoom {
                         x,
                         y,
@@ -463,37 +473,33 @@ fn wl_pointer_cb(
     }
 }
 
-fn pointer_pinch_cb(
-    conn: &mut Connection<State>,
-    state: &mut State,
-    pointer_pinch: ZwpPointerGesturePinchV1,
-    event: zwp_pointer_gesture_pinch_v1::Event,
-) {
-    let gui_scale = state.window.get_int_scale(state);
+fn pointer_pinch_cb(ctx: EventCtx<ZwpPointerGesturePinchV1>) {
+    let gui_scale = ctx.state.window.get_int_scale(ctx.state);
 
-    let ptr = state
+    let ptr = ctx
+        .state
         .pointers
         .iter_mut()
         .find(|s| {
             s.pinch_gesture
                 .as_ref()
-                .is_some_and(|pg| pg.wl == pointer_pinch)
+                .is_some_and(|pg| pg.wl == ctx.proxy)
         })
         .unwrap();
 
     let pg = ptr.pinch_gesture.as_mut().unwrap();
 
     use zwp_pointer_gesture_pinch_v1::Event;
-    match (event, &mut pg.state) {
+    match (ctx.event, &mut pg.state) {
         (Event::Begin(args), _) if args.fingers == 2 => {
             pg.state = Some(PinchGestureState {
                 prev_scale: 1.0,
-                fallback_transform: state.img_transform,
+                fallback_transform: ctx.state.img_transform,
             });
             ptr.themed.set_cursor(
-                conn,
-                &mut state.shm_alloc,
-                &state.move_cursor,
+                ctx.conn,
+                &mut ctx.state.shm_alloc,
+                &ctx.state.move_cursor,
                 gui_scale,
                 ptr.enter_serial,
             );
@@ -502,19 +508,20 @@ fn pointer_pinch_cb(
             let val = (args.scale.as_f64() - s.prev_scale) * -100.0;
             let (x, y) = (ptr.x, ptr.y);
             s.prev_scale = args.scale.as_f64();
-            state.img_transform.x += args.dx.as_f64();
-            state.img_transform.y += args.dy.as_f64();
-            state.handle_action(conn, Action::Zoom { x, y, val });
+            ctx.state.img_transform.x += args.dx.as_f64();
+            ctx.state.img_transform.y += args.dy.as_f64();
+            ctx.state
+                .handle_action(ctx.conn, Action::Zoom { x, y, val });
         }
         (Event::End(args), Some(s)) => {
             if args.cancelled == 1 {
-                state.img_transform = s.fallback_transform;
-                state.window.request_frame(conn);
+                ctx.state.img_transform = s.fallback_transform;
+                ctx.state.window.request_frame(ctx.conn);
             }
             ptr.themed.set_cursor(
-                conn,
-                &mut state.shm_alloc,
-                &state.default_cursor,
+                ctx.conn,
+                &mut ctx.state.shm_alloc,
+                &ctx.state.default_cursor,
                 gui_scale,
                 ptr.enter_serial,
             );

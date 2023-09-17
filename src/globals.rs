@@ -1,7 +1,6 @@
 use wayrs_client::global::{BindError, Global, GlobalsExt};
-use wayrs_client::Connection;
-
 use wayrs_client::protocol::*;
+use wayrs_client::{Connection, EventCtx};
 use wayrs_protocols::fractional_scale_v1::*;
 use wayrs_protocols::pointer_gestures_unstable_v1::*;
 use wayrs_protocols::viewporter::*;
@@ -35,13 +34,8 @@ impl Globals {
     }
 }
 
-fn xdg_wm_base_cb<D>(
-    conn: &mut Connection<D>,
-    _: &mut D,
-    xdg_wm_base: XdgWmBase,
-    event: xdg_wm_base::Event,
-) {
-    if let xdg_wm_base::Event::Ping(serial) = event {
-        xdg_wm_base.pong(conn, serial);
+fn xdg_wm_base_cb<D>(ctx: EventCtx<D, XdgWmBase>) {
+    if let xdg_wm_base::Event::Ping(serial) = ctx.event {
+        ctx.proxy.pong(ctx.conn, serial);
     }
 }

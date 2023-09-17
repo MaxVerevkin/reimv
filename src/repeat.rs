@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use wayrs_utils::keyboard::{xkb, RepeatInfo};
 
@@ -29,9 +29,9 @@ impl RepeatState {
         }
     }
 
-    pub fn timeout(&self) -> isize {
+    pub fn timeout(&self) -> Option<Duration> {
         match &self {
-            Self::None => -1,
+            Self::None => None,
             Self::Delay {
                 delay_will_end: instant,
                 ..
@@ -39,9 +39,7 @@ impl RepeatState {
             | Self::Repeat {
                 next_repeat: instant,
                 ..
-            } => instant
-                .saturating_duration_since(Instant::now())
-                .as_millis() as isize,
+            } => Some(instant.saturating_duration_since(Instant::now())),
         }
     }
 
