@@ -2,16 +2,15 @@
 
 mod globals;
 mod image;
-mod repeat;
 mod window;
 
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, RawFd};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::image::Image;
 use globals::Globals;
-use repeat::RepeatState;
+use wayrs_utils::timer::Timer;
 use window::Window;
 
 use wayrs_client::global::{Global, GlobalExt};
@@ -20,7 +19,7 @@ use wayrs_client::proxy::Proxy;
 use wayrs_client::{Connection, IoMode};
 use wayrs_protocols::pointer_gestures_unstable_v1::*;
 use wayrs_utils::cursor::{CursorImage, CursorShape, CursorTheme, ThemedPointer};
-use wayrs_utils::keyboard::{Keyboard, KeyboardEvent, KeyboardHandler};
+use wayrs_utils::keyboard::{xkb, Keyboard, KeyboardEvent, KeyboardHandler};
 use wayrs_utils::seats::{SeatHandler, Seats};
 use wayrs_utils::shm_alloc::ShmAlloc;
 
@@ -74,7 +73,7 @@ fn main() -> Result<()> {
         },
 
         move_transaction: None,
-        kbd_repeat: RepeatState::None,
+        kbd_repeat: None,
     };
 
     wl_globals
@@ -85,10 +84,14 @@ fn main() -> Result<()> {
     conn.flush(IoMode::Blocking)?;
 
     while !state.window.closed {
-        poll(conn.as_raw_fd(), state.kbd_repeat.timeout())?;
+        let timeout = state.kbd_repeat.as_ref().map(|k| k.timer.sleep());
+        poll(conn.as_raw_fd(), timeout)?;
 
-        if let Some(action) = state.kbd_repeat.tick() {
-            state.handle_action(&mut conn, action);
+        if let Some(repeat) = &mut state.kbd_repeat {
+            if repeat.timer.tick() {
+                let action = repeat.action;
+                state.handle_action(&mut conn, action);
+            }
         }
 
         match conn.recv_events(IoMode::NonBlocking) {
@@ -146,7 +149,13 @@ pub struct State {
     img_transform: ImageTransform,
 
     move_transaction: Option<MoveTransaction>,
-    kbd_repeat: RepeatState,
+    kbd_repeat: Option<RepeatState>,
+}
+
+pub struct RepeatState {
+    key: xkb::Keycode,
+    action: Action,
+    timer: Timer,
 }
 
 impl State {
@@ -211,12 +220,11 @@ impl KeyboardHandler for State {
 
         if let Some(info) = event.repeat_info {
             if event.xkb_state.get_keymap().key_repeats(event.keycode) {
-                self.kbd_repeat = RepeatState::Delay {
-                    info,
-                    delay_will_end: Instant::now() + info.delay,
-                    action,
+                self.kbd_repeat = Some(RepeatState {
                     key: event.keycode,
-                };
+                    action,
+                    timer: info.timer(),
+                });
             }
         }
 
@@ -224,8 +232,8 @@ impl KeyboardHandler for State {
     }
 
     fn key_released(&mut self, _: &mut Connection<Self>, event: KeyboardEvent) {
-        if self.kbd_repeat.key() == Some(event.keycode) {
-            self.kbd_repeat = RepeatState::None;
+        if self.kbd_repeat.as_ref().map(|r| r.key) == Some(event.keycode) {
+            self.kbd_repeat = None;
         }
     }
 }
