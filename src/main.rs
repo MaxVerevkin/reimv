@@ -8,7 +8,7 @@ use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, RawFd};
 use std::time::Duration;
 
-use crate::image::Image;
+use crate::image::{Image, ImageTransform};
 use globals::Globals;
 use wayrs_utils::timer::Timer;
 use window::Window;
@@ -38,15 +38,21 @@ struct CliArgs {
 
 fn main() -> Result<()> {
     let cli_args = CliArgs::parse();
-    let backend = Image::from_file(&cli_args.file)?;
 
     let (mut conn, wl_globals) = Connection::connect_and_collect_globals()?;
     conn.add_registry_cb(wl_registry_cb);
 
     let globals = Globals::bind(&mut conn, &wl_globals)?;
-    let shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
+    let mut shm_alloc = ShmAlloc::bind(&mut conn, &wl_globals)?;
     let window = Window::new(&mut conn, &globals, format!("{} - reimv", cli_args.file));
 
+    let backend = Image::from_file(
+        &cli_args.file,
+        window.surface,
+        &globals,
+        &mut shm_alloc,
+        &mut conn,
+    )?;
     let cursor_theme = CursorTheme::new(&mut conn, &wl_globals, globals.wl_compositor);
 
     let mut state = State {
@@ -161,10 +167,10 @@ pub struct RepeatState {
 impl State {
     pub fn handle_action(&mut self, conn: &mut Connection<Self>, action: Action) {
         match action {
-            Action::MoveLeft => self.img_transform.x += self.window.width as f64 * 0.05,
-            Action::MoveRight => self.img_transform.x -= self.window.width as f64 * 0.05,
-            Action::MoveUp => self.img_transform.y += self.window.height as f64 * 0.05,
-            Action::MoveDown => self.img_transform.y -= self.window.height as f64 * 0.05,
+            Action::MoveLeft => self.img_transform.x += self.window.width as f32 * 0.05,
+            Action::MoveRight => self.img_transform.x -= self.window.width as f32 * 0.05,
+            Action::MoveUp => self.img_transform.y += self.window.height as f32 * 0.05,
+            Action::MoveDown => self.img_transform.y -= self.window.height as f32 * 0.05,
             Action::Zoom { x, y, val } => {
                 // When zooming we want to move the image in such a way that the pointer's
                 // coordinates in image lacal coordinates do not change. This can be expressed as
@@ -205,13 +211,13 @@ impl KeyboardHandler for State {
             "k" => Action::MoveUp,
             "j" => Action::MoveDown,
             "-" => Action::Zoom {
-                x: self.window.width as f64 / 2.0,
-                y: self.window.height as f64 / 2.0,
+                x: self.window.width as f32 / 2.0,
+                y: self.window.height as f32 / 2.0,
                 val: 10.0,
             },
             "+" => Action::Zoom {
-                x: self.window.width as f64 / 2.0,
-                y: self.window.height as f64 / 2.0,
+                x: self.window.width as f32 / 2.0,
+                y: self.window.height as f32 / 2.0,
                 val: -10.0,
             },
             "f" => Action::ToggleFullscreen,
@@ -239,22 +245,12 @@ impl KeyboardHandler for State {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ImageTransform {
-    /// Y-offset in surface local coordinates
-    x: f64,
-    /// Y-offset in surface local coordinates
-    y: f64,
-    /// Scale
-    scale: f64,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum Action {
     MoveLeft,
     MoveRight,
     MoveUp,
     MoveDown,
-    Zoom { x: f64, y: f64, val: f64 },
+    Zoom { x: f32, y: f32, val: f32 },
     ToggleFullscreen,
 }
 
@@ -275,8 +271,8 @@ pub struct Pointer {
     themed: ThemedPointer,
     pinch_gesture: Option<PinchGesture>,
     enter_serial: u32,
-    x: f64,
-    y: f64,
+    x: f32,
+    y: f32,
 }
 
 struct PinchGesture {
@@ -285,7 +281,7 @@ struct PinchGesture {
 }
 
 struct PinchGestureState {
-    prev_scale: f64,
+    prev_scale: f32,
     fallback_transform: ImageTransform,
 }
 
@@ -399,8 +395,8 @@ fn wl_pointer_cb(ctx: EventCtx<WlPointer>) {
         wl_pointer::Event::Enter(args) => {
             assert_eq!(args.surface, ctx.state.window.surface.id());
             ptr.enter_serial = args.serial;
-            ptr.x = args.surface_x.as_f64();
-            ptr.y = args.surface_y.as_f64();
+            ptr.x = args.surface_x.as_f32();
+            ptr.y = args.surface_y.as_f32();
             ptr.themed.set_cursor(
                 ctx.conn,
                 &mut ctx.state.shm_alloc,
@@ -418,8 +414,8 @@ fn wl_pointer_cb(ctx: EventCtx<WlPointer>) {
             }
         }
         wl_pointer::Event::Motion(args) => {
-            let x = args.surface_x.as_f64();
-            let y = args.surface_y.as_f64();
+            let x = args.surface_x.as_f32();
+            let y = args.surface_y.as_f32();
             let dx = x - ptr.x;
             let dy = y - ptr.y;
             ptr.x = x;
@@ -472,7 +468,7 @@ fn wl_pointer_cb(ctx: EventCtx<WlPointer>) {
                     Action::Zoom {
                         x,
                         y,
-                        val: args.value.as_f64(),
+                        val: args.value.as_f32(),
                     },
                 );
             }
@@ -513,11 +509,11 @@ fn pointer_pinch_cb(ctx: EventCtx<ZwpPointerGesturePinchV1>) {
             );
         }
         (Event::Update(args), Some(s)) => {
-            let val = (args.scale.as_f64() - s.prev_scale) * -100.0;
+            let val = (args.scale.as_f32() - s.prev_scale) * -100.0;
             let (x, y) = (ptr.x, ptr.y);
-            s.prev_scale = args.scale.as_f64();
-            ctx.state.img_transform.x += args.dx.as_f64();
-            ctx.state.img_transform.y += args.dy.as_f64();
+            s.prev_scale = args.scale.as_f32();
+            ctx.state.img_transform.x += args.dx.as_f32();
+            ctx.state.img_transform.y += args.dy.as_f32();
             ctx.state
                 .handle_action(ctx.conn, Action::Zoom { x, y, val });
         }

@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 use std::ffi::CString;
 
-use resvg::tiny_skia;
-
 use wayrs_client::cstr;
 use wayrs_client::object::ObjectId;
 use wayrs_client::proxy::Proxy;
@@ -13,7 +11,6 @@ use wayrs_protocols::xdg_shell::*;
 use wayrs_client::protocol::*;
 use wayrs_protocols::fractional_scale_v1::*;
 use wayrs_protocols::xdg_decoration_unstable_v1::*;
-use wayrs_utils::shm_alloc::BufferSpec;
 
 use crate::globals::Globals;
 use crate::EventCtx;
@@ -23,6 +20,7 @@ pub struct Window {
     pub surface: WlSurface,
     pub xdg_surface: XdgSurface,
     pub xdg_toplevel: XdgToplevel,
+    pub wl_buffer: WlBuffer,
     pub viewport: WpViewport,
     pub fractional_scale: Option<WpFractionalScaleV1>,
     pub xdg_decoration: Option<ZxdgToplevelDecorationV1>,
@@ -55,6 +53,11 @@ impl Window {
                 .xdg_wm_base
                 .get_xdg_surface_with_cb(conn, surface, xdg_surface_cb);
 
+        let bg_pix = u32::MAX / 256 * 20;
+        let wl_buffer = globals
+            .single_pixel_buffer_manager
+            .create_u32_rgba_buffer(conn, bg_pix, bg_pix, bg_pix, bg_pix);
+
         let xdg_toplevel = xdg_surface.get_toplevel_with_cb(conn, xdg_toplevel_cb);
         xdg_toplevel.set_app_id(conn, cstr!("reimv").into());
         xdg_toplevel.set_title(conn, CString::new(title).expect("title has nul bytes"));
@@ -74,6 +77,7 @@ impl Window {
             surface,
             xdg_surface,
             xdg_toplevel,
+            wl_buffer,
             viewport,
             fractional_scale,
             xdg_decoration,
@@ -105,48 +109,21 @@ impl Window {
         let this = &state.window;
         assert!(this.mapped);
 
-        let (pix_width, pix_height, scale_f) = match this.scale120 {
-            Some(scale120) => (
-                // rounding halfway away from zero
-                (this.width * scale120 + 60) / 120,
-                (this.height * scale120 + 60) / 120,
-                scale120 as f64 / 120.0,
-            ),
-            None => {
-                let scale = this.get_int_scale(state);
-                (this.width * scale, this.height * scale, scale as f64)
-            }
-        };
-
-        let (buffer, canvas) = state.shm_alloc.alloc_buffer(
-            conn,
-            BufferSpec {
-                width: pix_width,
-                height: pix_height,
-                stride: pix_width * 4,
-                format: wl_shm::Format::Abgr8888,
-            },
-        );
-
-        canvas.fill(20);
-
-        let canvas = tiny_skia::PixmapMut::from_bytes(canvas, pix_width, pix_height).unwrap();
+        let scale120 = this
+            .scale120
+            .unwrap_or_else(|| this.get_int_scale(state) * 120);
 
         state.backend.render(
-            canvas,
-            scale_f,
-            state.img_transform.scale,
-            state.img_transform.x,
-            state.img_transform.y,
+            conn,
+            &mut state.shm_alloc,
+            this.width,
+            this.height,
+            scale120,
+            &state.img_transform,
         );
 
-        this.surface
-            .attach(conn, Some(buffer.into_wl_buffer()), 0, 0);
         this.viewport
             .set_destination(conn, this.width as i32, this.height as i32);
-        this.surface
-            .damage(conn, 0, 0, this.width as i32, this.height as i32);
-
         this.surface.commit(conn);
     }
 
@@ -197,10 +174,15 @@ fn xdg_surface_cb(ctx: EventCtx<XdgSurface>) {
     ctx.proxy.ack_configure(ctx.conn, serial);
     if ctx.state.window.mapped {
         // NOTE: this is because of a river bug: https://github.com/riverwm/river/issues/807
-        // ctx.state.window.request_frame(conn);
+        // ctx.state.window.request_frame(ctx.conn);
         Window::frame(ctx.state, ctx.conn);
     } else {
         ctx.state.window.mapped = true;
+        ctx.state
+            .window
+            .surface
+            .attach(ctx.conn, Some(ctx.state.window.wl_buffer), 0, 0);
+        ctx.state.window.surface.damage(ctx.conn, 0, 0, 1, 1);
         Window::frame(ctx.state, ctx.conn);
     }
 }
