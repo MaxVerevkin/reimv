@@ -184,7 +184,7 @@ impl State {
             }
             Action::ToggleFullscreen => self.window.toggle_fullscreen(conn),
         }
-        self.window.request_frame(conn);
+        Window::frame(self, conn);
     }
 
     pub fn bind_output(&mut self, conn: &mut Connection<Self>, global: &Global) {
@@ -374,7 +374,7 @@ fn wl_output_cb(ctx: EventCtx<WlOutput>) {
             .unwrap();
         output.scale = scale.try_into().unwrap();
         if ctx.state.window.outputs.contains(&ctx.proxy.id()) {
-            ctx.state.window.request_frame(ctx.conn);
+            Window::frame(ctx.state, ctx.conn);
         }
     }
 }
@@ -424,7 +424,7 @@ fn wl_pointer_cb(ctx: EventCtx<WlPointer>) {
                 if mt.wl_seat == ptr.seat {
                     ctx.state.img_transform.x += dx;
                     ctx.state.img_transform.y += dy;
-                    ctx.state.window.request_frame(ctx.conn);
+                    Window::frame(ctx.state, ctx.conn);
                 }
             }
         }
@@ -518,10 +518,6 @@ fn pointer_pinch_cb(ctx: EventCtx<ZwpPointerGesturePinchV1>) {
                 .handle_action(ctx.conn, Action::Zoom { x, y, val });
         }
         (Event::End(args), Some(s)) => {
-            if args.cancelled == 1 {
-                ctx.state.img_transform = s.fallback_transform;
-                ctx.state.window.request_frame(ctx.conn);
-            }
             ptr.themed.set_cursor(
                 ctx.conn,
                 &mut ctx.state.shm_alloc,
@@ -529,7 +525,11 @@ fn pointer_pinch_cb(ctx: EventCtx<ZwpPointerGesturePinchV1>) {
                 gui_scale,
                 ptr.enter_serial,
             );
+            if args.cancelled == 1 {
+                ctx.state.img_transform = s.fallback_transform;
+            }
             pg.state = None;
+            Window::frame(ctx.state, ctx.conn);
         }
         _ => (),
     }

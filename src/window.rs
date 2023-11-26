@@ -29,7 +29,8 @@ pub struct Window {
     pub scale120: Option<u32>,
 
     pub mapped: bool,
-    pub wl_frame_cb: Option<WlCallback>,
+    pub throttle: Option<WlCallback>,
+    pub throttled: bool,
     pub width: u32,
     pub height: u32,
     pub fullscreen: bool,
@@ -86,7 +87,8 @@ impl Window {
             outputs: HashSet::new(),
 
             mapped: false,
-            wl_frame_cb: None,
+            throttle: None,
+            throttled: false,
             width: 400,
             height: 300,
             fullscreen: false,
@@ -94,37 +96,44 @@ impl Window {
         }
     }
 
-    pub fn request_frame(&mut self, conn: &mut Connection<State>) {
-        if self.mapped && self.wl_frame_cb.is_none() {
-            self.wl_frame_cb = Some(self.surface.frame_with_cb(conn, |ctx| {
-                assert_eq!(ctx.state.window.wl_frame_cb, Some(ctx.proxy));
-                ctx.state.window.wl_frame_cb = None;
-                Self::frame(ctx.state, ctx.conn);
-            }));
-            self.surface.commit(conn);
-        }
-    }
-
     pub fn frame(state: &mut State, conn: &mut Connection<State>) {
-        let this = &state.window;
-        assert!(this.mapped);
+        assert!(state.window.mapped);
 
-        let scale120 = this
+        if state.window.throttle.is_some() {
+            state.window.throttled = true;
+            return;
+        }
+
+        let scale120 = state
+            .window
             .scale120
-            .unwrap_or_else(|| this.get_int_scale(state) * 120);
+            .unwrap_or_else(|| state.window.get_int_scale(state) * 120);
 
         state.backend.render(
             conn,
             &mut state.shm_alloc,
-            this.width,
-            this.height,
+            state.window.width,
+            state.window.height,
             scale120,
             &state.img_transform,
         );
 
-        this.viewport
-            .set_destination(conn, this.width as i32, this.height as i32);
-        this.surface.commit(conn);
+        state.window.viewport.set_destination(
+            conn,
+            state.window.width as i32,
+            state.window.height as i32,
+        );
+
+        state.window.throttle = Some(state.window.surface.frame_with_cb(conn, |ctx| {
+            assert_eq!(ctx.state.window.throttle, Some(ctx.proxy));
+            ctx.state.window.throttle = None;
+            if ctx.state.window.throttled {
+                ctx.state.window.throttled = false;
+                Self::frame(ctx.state, ctx.conn);
+            }
+        }));
+
+        state.window.surface.commit(conn);
     }
 
     pub fn get_int_scale(&self, state: &State) -> u32 {
@@ -163,7 +172,7 @@ fn wl_surface_cb(ctx: EventCtx<WlSurface>) {
         }
         _ => (),
     }
-    ctx.state.window.request_frame(ctx.conn);
+    Window::frame(ctx.state, ctx.conn);
 }
 
 fn xdg_surface_cb(ctx: EventCtx<XdgSurface>) {
@@ -172,19 +181,15 @@ fn xdg_surface_cb(ctx: EventCtx<XdgSurface>) {
         return;
     };
     ctx.proxy.ack_configure(ctx.conn, serial);
-    if ctx.state.window.mapped {
-        // NOTE: this is because of a river bug: https://github.com/riverwm/river/issues/807
-        // ctx.state.window.request_frame(ctx.conn);
-        Window::frame(ctx.state, ctx.conn);
-    } else {
+    if !ctx.state.window.mapped {
         ctx.state.window.mapped = true;
         ctx.state
             .window
             .surface
             .attach(ctx.conn, Some(ctx.state.window.wl_buffer), 0, 0);
         ctx.state.window.surface.damage(ctx.conn, 0, 0, 1, 1);
-        Window::frame(ctx.state, ctx.conn);
     }
+    Window::frame(ctx.state, ctx.conn);
 }
 
 fn fractional_scale_cb(ctx: EventCtx<WpFractionalScaleV1>) {
@@ -194,7 +199,7 @@ fn fractional_scale_cb(ctx: EventCtx<WpFractionalScaleV1>) {
     };
     if ctx.state.window.scale120 != Some(scale120) {
         ctx.state.window.scale120 = Some(scale120);
-        ctx.state.window.request_frame(ctx.conn);
+        Window::frame(ctx.state, ctx.conn);
     }
 }
 
