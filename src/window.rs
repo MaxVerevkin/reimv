@@ -97,7 +97,9 @@ impl Window {
     }
 
     pub fn frame(state: &mut State, conn: &mut Connection<State>) {
-        assert!(state.window.mapped);
+        if !state.window.mapped {
+            return;
+        }
 
         if state.window.throttle.is_some() {
             state.window.throttled = true;
