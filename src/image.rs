@@ -185,7 +185,6 @@ impl Image {
                             Fixed((src.width() * 256.0) as i32),
                             Fixed((src.height() * 256.0) as i32),
                         );
-                        self.surface.commit(conn);
                     }
                     _ => {
                         // HACK
