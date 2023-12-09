@@ -182,8 +182,8 @@ impl Image {
                             // TODO: upstream float -> fixed conversion to wayrs-client
                             Fixed((src.x() * 256.0) as i32),
                             Fixed((src.y() * 256.0) as i32),
-                            Fixed((src.width() * 256.0) as i32),
-                            Fixed((src.height() * 256.0) as i32),
+                            Fixed((src.width().clamp(1.0, *width as f32) * 256.0) as i32),
+                            Fixed((src.height().clamp(1.0, *height as f32) * 256.0) as i32),
                         );
                     }
                     _ => {
