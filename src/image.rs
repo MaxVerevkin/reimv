@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use wayrs_client::protocol::*;
-use wayrs_client::wire::Fixed;
 use wayrs_client::Connection;
 use wayrs_protocols::viewporter::*;
 use wayrs_utils::shm_alloc::{BufferSpec, ShmAlloc};
@@ -179,11 +178,10 @@ impl Image {
                         );
                         self.viewport.set_source(
                             conn,
-                            // TODO: upstream float -> fixed conversion to wayrs-client
-                            Fixed((src.x() * 256.0) as i32),
-                            Fixed((src.y() * 256.0) as i32),
-                            Fixed((src.width().clamp(1.0, *width as f32) * 256.0) as i32),
-                            Fixed((src.height().clamp(1.0, *height as f32) * 256.0) as i32),
+                            src.x().into(),
+                            src.y().into(),
+                            src.width().clamp(1.0, *width as f32).into(),
+                            src.height().clamp(1.0, *height as f32).into(),
                         );
                     }
                     _ => {

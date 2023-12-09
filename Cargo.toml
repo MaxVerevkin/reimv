@@ -9,8 +9,8 @@ clap = { version = "4.1", features = ["derive"] }
 image = "0.24"
 libc = "0.2"
 resvg = "0.36"
-wayrs-client = "0.12"
-wayrs-protocols = { version = "0.12", features = [
+wayrs-client = "1.0"
+wayrs-protocols = { version = "0.13", features = [
   "xdg-shell",
   "viewporter",
   "fractional-scale-v1",
@@ -18,7 +18,7 @@ wayrs-protocols = { version = "0.12", features = [
   "pointer-gestures-unstable-v1",
   "single-pixel-buffer-v1",
 ] }
-wayrs-utils = { version = "0.12", features = [
+wayrs-utils = { version = "0.13", features = [
   "seats",
   "shm_alloc",
   "cursor",
