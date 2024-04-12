@@ -7,7 +7,7 @@ use wayrs_utils::shm_alloc::{BufferSpec, ShmAlloc};
 
 use anyhow::{Context, Result};
 use resvg::{tiny_skia, usvg};
-use usvg::{fontdb, TreeParsing, TreeTextToPath};
+use usvg::fontdb;
 
 use crate::globals::Globals;
 use crate::State;
@@ -20,7 +20,7 @@ pub struct Image {
 }
 
 enum ImageKind {
-    Svg { tree: resvg::Tree },
+    Svg { tree: usvg::Tree },
     Image { width: u32, height: u32 },
 }
 
@@ -59,20 +59,17 @@ impl Image {
                     .ok()
                     .and_then(|p| p.parent().map(Into::into));
 
-                let buf = std::fs::read(path).context("could not read file")?;
-                let mut tree = usvg::Tree::from_data(&buf, &usvg::Options::default())?;
-
                 let mut fontdb = fontdb::Database::new();
                 fontdb.load_system_fonts();
-                tree.convert_text(&fontdb);
+
+                let buf = std::fs::read(path).context("could not read file")?;
+                let tree = usvg::Tree::from_data(&buf, &usvg::Options::default(), &fontdb)?;
 
                 Ok(Self {
                     surface,
                     subsurface,
                     viewport,
-                    kind: ImageKind::Svg {
-                        tree: resvg::Tree::from_usvg(&tree),
-                    },
+                    kind: ImageKind::Svg { tree },
                 })
             }
             _ => {
@@ -144,7 +141,7 @@ impl Image {
                 let mut canvas =
                     tiny_skia::PixmapMut::from_bytes(canvas, pix_width, pix_height).unwrap();
 
-                tree.render(transform, &mut canvas);
+                resvg::render(tree, transform, &mut canvas);
 
                 self.surface
                     .attach(conn, Some(buffer.into_wl_buffer()), 0, 0);
