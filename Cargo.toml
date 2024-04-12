@@ -18,7 +18,7 @@ wayrs-protocols = { version = "0.13", features = [
   "pointer-gestures-unstable-v1",
   "single-pixel-buffer-v1",
 ] }
-wayrs-utils = { version = "0.13", features = [
+wayrs-utils = { version = "0.14", features = [
   "seats",
   "shm_alloc",
   "cursor",

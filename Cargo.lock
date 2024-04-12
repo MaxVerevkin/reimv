@@ -680,10 +680,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
-name = "shmemfdrs"
-version = "0.1.4"
+name = "shmemfdrs2"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a07caaa5573b8fa1142d19783d30ba2999c6a221169784f3bb7e2b9b308bcbdb"
+checksum = "70a05cf957f811e44f99c629e6d34025429912ffb2333f2960372669e670f54c"
 dependencies = [
  "libc",
 ]
@@ -1014,12 +1014,13 @@ dependencies = [
 
 [[package]]
 name = "wayrs-utils"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9479c5fd1f276703a398c785664f5440011c07dc42cdc9260e264def1aad598"
+checksum = "c6660838ffb749601dd17b9801206bf124f7f4d02b132316fab893b6486295ae"
 dependencies = [
+ "libc",
  "memmap2",
- "shmemfdrs",
+ "shmemfdrs2",
  "thiserror",
  "wayrs-client",
  "wayrs-protocols",

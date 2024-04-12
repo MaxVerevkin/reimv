@@ -84,15 +84,17 @@ impl Image {
                 let width = image.width();
                 let height = image.height();
 
-                let (buffer, canvas) = shm.alloc_buffer(
-                    conn,
-                    BufferSpec {
-                        width,
-                        height,
-                        stride: width * 4,
-                        format: wl_shm::Format::Abgr8888,
-                    },
-                );
+                let (buffer, canvas) = shm
+                    .alloc_buffer(
+                        conn,
+                        BufferSpec {
+                            width,
+                            height,
+                            stride: width * 4,
+                            format: wl_shm::Format::Abgr8888,
+                        },
+                    )
+                    .unwrap();
                 canvas.copy_from_slice(image.as_raw());
                 surface.attach(conn, Some(buffer.into_wl_buffer()), 0, 0);
 
@@ -126,15 +128,17 @@ impl Image {
                 let pix_width = (win_width * ui_scale120 + 60) / 120;
                 let pix_height = (win_height * ui_scale120 + 60) / 120;
 
-                let (buffer, canvas) = shm.alloc_buffer(
-                    conn,
-                    BufferSpec {
-                        width: pix_width,
-                        height: pix_height,
-                        stride: pix_width * 4,
-                        format: wl_shm::Format::Abgr8888,
-                    },
-                );
+                let (buffer, canvas) = shm
+                    .alloc_buffer(
+                        conn,
+                        BufferSpec {
+                            width: pix_width,
+                            height: pix_height,
+                            stride: pix_width * 4,
+                            format: wl_shm::Format::Abgr8888,
+                        },
+                    )
+                    .unwrap();
                 canvas.fill(20);
 
                 let mut canvas =
