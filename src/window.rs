@@ -23,7 +23,6 @@ pub struct Window {
     pub wl_buffer: WlBuffer,
     pub viewport: WpViewport,
     pub fractional_scale: Option<WpFractionalScaleV1>,
-    pub xdg_decoration: Option<ZxdgToplevelDecorationV1>,
 
     pub outputs: HashSet<ObjectId>,
     pub scale120: Option<u32>,
@@ -81,7 +80,6 @@ impl Window {
             wl_buffer,
             viewport,
             fractional_scale,
-            xdg_decoration,
 
             scale120: None,
             outputs: HashSet::new(),
